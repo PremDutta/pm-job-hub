@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚀 PM Job Hub - Find Your Dream PM Role</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: { fontFamily: { sans: ['Inter', 'sans-serif'] } } }
+        }
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 12px 40px rgba(0,0,0,0.12); }
+        .skeleton { background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
+        @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 3px; }
+        .dark .skeleton { background: linear-gradient(90deg, #374151 25%, #4b5563 50%, #374151 75%); }
+    </style>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900">
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useEffect, useCallback } = React;
+        
+        // API - automatically uses current host in production
+        const API_BASE = window.location.hostname === 'localhost' 
+            ? 'http://localhost:8000/api' 
+            : `${window.location.origin}/api`;
+        
+        const api = {
+            async getJobs(params = {}) {
+                const cleanParams = {};
+                Object.entries(params).forEach(([k, v]) => {
+                    if (v !== undefined && v !== null && v !== '' && v !== false) cleanParams[k] = v;
+                });
+                const query = new URLSearchParams(cleanParams).toString();
+                const res = await fetch(`${API_BASE}/jobs?${query}`);
+                if (!res.ok) throw new Error('Failed to fetch jobs');
+                return res.json();
+            },
+            async getStats() {
+                const res = await fetch(`${API_BASE}/stats`);
+                return res.json();
+            },
+            async updateJob(id, data) {
+                const res = await fetch(`${API_BASE}/jobs/${id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                return res.json();
+            },
+            async changeStatus(id, status) {
+                const res = await fetch(`${API_BASE}/jobs/${id}/status?status=${status}`, { method: 'POST' });
+                return res.json();
+            },
+            async startScrape(data) {
+                const res = await fetch(`${API_BASE}/scrape`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                return res.json();
+            },
+            async getScrapeStatus() {
+                const res = await fetch(`${API_BASE}/scrape/status`);
+                return res.json();
+            },
+            async getSources() {
+                const res = await fetch(`${API_BASE}/sources`);
+                return res.json();
+            },
+            async getLocations() {
+                const res = await fetch(`${API_BASE}/locations`);
+                return res.json();
+            }
+        };
+
+        // Icons
+        const Icons = {
+            Search: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>,
+            Bookmark: ({ filled }) => <svg className={`w-5 h-5 ${filled ? 'fill-yellow-400 text-yellow-400' : ''}`} fill={filled ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>,
+            Check: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>,
+            External: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>,
+            Refresh: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>,
+            Filter: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>,
+            Download: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>,
+            Briefcase: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>,
+            Clock: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
+            Location: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /></svg>,
+            Money: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
+            X: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>,
+            Sun: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>,
+            Moon: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>,
+            Eye: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>,
+            Target: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>,
+            TrendingUp: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>,
+        };
+
+        // Components
+        const Badge = ({ children, variant = 'default', className = '' }) => {
+            const variants = {
+                default: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+                primary: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300',
+                success: 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300',
+                warning: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300',
+                danger: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300',
+                hot: 'bg-red-500 text-white',
+            };
+            return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${variants[variant]} ${className}`}>{children}</span>;
+        };
+
+        const Button = ({ children, variant = 'primary', className = '', ...props }) => {
+            const variants = {
+                primary: 'bg-indigo-600 text-white hover:bg-indigo-700',
+                secondary: 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700',
+            };
+            return <button className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors disabled:opacity-50 ${variants[variant]} ${className}`} {...props}>{children}</button>;
+        };
+
+        const Card = ({ children, className = '', hover = false }) => (
+            <div className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 ${hover ? 'card-hover transition-all' : ''} ${className}`}>{children}</div>
+        );
+
+        const Modal = ({ isOpen, onClose, title, children }) => {
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center p-6 border-b dark:border-gray-700">
+                            <h2 className="text-xl font-bold dark:text-white">{title}</h2>
+                            <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"><Icons.X /></button>
+                        </div>
+                        <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">{children}</div>
+                    </div>
+                </div>
+            );
+        };
+
+        // Stat Card
+        const StatCard = ({ title, value, icon, color, onClick, active }) => (
+            <Card className={`p-4 ${onClick ? 'cursor-pointer hover:shadow-md' : ''} ${active ? 'ring-2 ring-indigo-500' : ''}`} onClick={onClick}>
+                <div className="flex items-center justify-between">
+                    <div>
+                        <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{title}</p>
+                        <p className="text-2xl font-bold dark:text-white mt-1">{value}</p>
+                    </div>
+                    <div className={`p-2 rounded-lg ${color}`}>{icon}</div>
+                </div>
+            </Card>
+        );
+
+        // Job Card
+        const JobCard = ({ job, onAction, onViewDetails }) => {
+            const isHot = job.is_new || job.days_ago === 0 || job.days_ago === 1;
+            
+            const getFreshnessLabel = () => {
+                if (job.freshness_label) return job.freshness_label;
+                if (job.days_ago === 0) return '🔥 Today';
+                if (job.days_ago === 1) return 'Yesterday';
+                if (job.days_ago <= 7) return `${job.days_ago} days ago`;
+                if (job.days_ago <= 14) return `${job.days_ago} days ago`;
+                return job.posted_date || '';
+            };
+
+            return (
+                <Card hover className={`p-5 ${isHot ? 'ring-2 ring-red-200 dark:ring-red-800 bg-red-50/30 dark:bg-red-900/10' : ''}`}>
+                    <div className="flex justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                {isHot && <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />}
+                                <h3 className="text-lg font-semibold dark:text-white">{job.title}</h3>
+                                {isHot ? <Badge variant="hot">{getFreshnessLabel()}</Badge> : 
+                                 job.days_ago <= 7 ? <Badge variant="warning">{getFreshnessLabel()}</Badge> :
+                                 <Badge variant="default">{getFreshnessLabel()}</Badge>}
+                            </div>
+                            
+                            <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                <p className="text-gray-600 dark:text-gray-300 font-medium">{job.company}</p>
+                                {job.company_type && <span className="text-xs text-purple-600 dark:text-purple-400">{job.company_type}</span>}
+                            </div>
+                            
+                            <div className="flex flex-wrap gap-3 mt-3 text-sm text-gray-500 dark:text-gray-400">
+                                <span className="flex items-center gap-1"><Icons.Location />{job.location || 'India'}</span>
+                                {job.salary_normalized && <span className="flex items-center gap-1 text-green-600 font-medium"><Icons.Money />{job.salary_normalized}</span>}
+                                {job.experience && <span className="flex items-center gap-1"><Icons.Briefcase />{job.experience}</span>}
+                            </div>
+                            
+                            <div className="flex flex-wrap gap-2 mt-3">
+                                {job.work_type && <Badge variant="primary">{job.work_type}</Badge>}
+                                {job.job_level && <Badge>{job.job_level}</Badge>}
+                                <Badge className={job.source === 'LinkedIn' ? 'bg-blue-100 text-blue-700' : job.source === 'Naukri' ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700'}>{job.source}</Badge>
+                                {job.match_score > 60 && <Badge variant="success">🎯 {job.match_score}%</Badge>}
+                            </div>
+                            
+                            {job.skills?.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5 mt-3">
+                                    {job.skills.slice(0, 5).map((s, i) => <span key={i} className="px-2 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 rounded">{s}</span>)}
+                                    {job.skills.length > 5 && <span className="text-xs text-gray-400">+{job.skills.length - 5}</span>}
+                                </div>
+                            )}
+                        </div>
+                        
+                        <div className="flex flex-col gap-2">
+                            <button onClick={() => onAction(job.id, 'bookmark')} className={`p-2 rounded-lg ${job.is_bookmarked ? 'bg-yellow-100 text-yellow-600' : 'bg-gray-100 dark:bg-gray-700 text-gray-400 hover:bg-yellow-50'}`} title="Bookmark">
+                                <Icons.Bookmark filled={job.is_bookmarked} />
+                            </button>
+                            <button onClick={() => onAction(job.id, 'apply')} className={`p-2 rounded-lg ${job.status === 'applied' ? 'bg-green-100 text-green-600' : 'bg-gray-100 dark:bg-gray-700 text-gray-400 hover:bg-green-50'}`} title="Mark Applied">
+                                <Icons.Check />
+                            </button>
+                            {job.url && <a href={job.url} target="_blank" rel="noopener noreferrer" className="p-2 rounded-lg bg-indigo-100 text-indigo-600 hover:bg-indigo-200" title="Apply"><Icons.External /></a>}
+                            <button onClick={() => onViewDetails(job)} className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200" title="Details"><Icons.Eye /></button>
+                        </div>
+                    </div>
+                </Card>
+            );
+        };
+
+        // Filter Panel
+        const FilterPanel = ({ filters, onChange, sources, locations, onClose }) => (
+            <Card className="p-5">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-semibold dark:text-white flex items-center gap-2"><Icons.Filter /> Filters</h3>
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 lg:hidden"><Icons.X /></button>
+                </div>
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Work Type</label>
+                        <select value={filters.work_type || ''} onChange={e => onChange({...filters, work_type: e.target.value})} className="w-full p-2 text-sm border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white">
+                            <option value="">All</option>
+                            <option value="remote">🏠 Remote</option>
+                            <option value="hybrid">🔄 Hybrid</option>
+                            <option value="onsite">🏢 On-site</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Level</label>
+                        <select value={filters.level || ''} onChange={e => onChange({...filters, level: e.target.value})} className="w-full p-2 text-sm border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white">
+                            <option value="">All Levels</option>
+                            <option value="entry">🟢 Entry/APM</option>
+                            <option value="mid">🔷 Mid-Level</option>
+                            <option value="senior">🔵 Senior/Lead</option>
+                            <option value="director">📊 Director+</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Company Type</label>
+                        <select value={filters.company_type || ''} onChange={e => onChange({...filters, company_type: e.target.value})} className="w-full p-2 text-sm border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white">
+                            <option value="">All</option>
+                            <option value="unicorn">🦄 Unicorn</option>
+                            <option value="mnc">🏢 MNC</option>
+                            <option value="startup">🚀 Startup</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Source</label>
+                        <select value={filters.source || ''} onChange={e => onChange({...filters, source: e.target.value})} className="w-full p-2 text-sm border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white">
+                            <option value="">All Sources</option>
+                            {sources.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Location</label>
+                        <select value={filters.location || ''} onChange={e => onChange({...filters, location: e.target.value})} className="w-full p-2 text-sm border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white">
+                            <option value="">All Locations</option>
+                            {locations.slice(0, 20).map(l => <option key={l} value={l}>{l}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Min Salary (LPA)</label>
+                        <input type="number" value={filters.min_salary || ''} onChange={e => onChange({...filters, min_salary: e.target.value})} placeholder="e.g., 20" className="w-full p-2 text-sm border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white" />
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={filters.bookmarked_only || false} onChange={e => onChange({...filters, bookmarked_only: e.target.checked})} className="rounded text-indigo-600" />
+                        <span className="text-sm dark:text-gray-300">⭐ Bookmarked Only</span>
+                    </label>
+                </div>
+                <Button variant="secondary" className="w-full mt-4" onClick={() => onChange({})}>Clear Filters</Button>
+            </Card>
+        );
+
+        // Scrape Modal
+        const ScrapeModal = ({ isOpen, onClose, onComplete }) => {
+            const [config, setConfig] = useState({ locations: ['India'], pages: 3 });
+            const [status, setStatus] = useState(null);
+            const [polling, setPolling] = useState(false);
+
+            useEffect(() => {
+                if (!isOpen) { setStatus(null); setPolling(false); }
+            }, [isOpen]);
+
+            useEffect(() => {
+                let interval;
+                if (polling) {
+                    interval = setInterval(async () => {
+                        try {
+                            const s = await api.getScrapeStatus();
+                            setStatus(s);
+                            if (!s.is_running && s.status !== 'idle') {
+                                setPolling(false);
+                                if (s.status === 'completed') setTimeout(() => onComplete?.(), 1000);
+                            }
+                        } catch (e) { console.error(e); }
+                    }, 2000);
+                }
+                return () => clearInterval(interval);
+            }, [polling, onComplete]);
+
+            const startScrape = async () => {
+                try {
+                    await api.startScrape(config);
+                    setPolling(true);
+                } catch (e) { alert('Failed to start scraping'); }
+            };
+
+            return (
+                <Modal isOpen={isOpen} onClose={onClose} title="🔍 Scrape New Jobs">
+                    {status?.is_running ? (
+                        <div className="text-center py-8">
+                            <div className="w-16 h-16 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto mb-4" />
+                            <p className="font-medium dark:text-white">Scraping in progress...</p>
+                            <p className="text-sm text-gray-500 mt-2">Found: {status.total_found || 0} | New: {status.new_jobs || 0}</p>
+                        </div>
+                    ) : status?.status === 'completed' ? (
+                        <div className="text-center py-8">
+                            <div className="text-5xl mb-4">✅</div>
+                            <p className="font-semibold dark:text-white">Scraping Complete!</p>
+                            <p className="text-gray-500 mt-2">Found {status.total_found} jobs, {status.new_jobs} new</p>
+                            <Button className="mt-4" onClick={onClose}>View Jobs</Button>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium mb-1 dark:text-gray-200">Location</label>
+                                <input type="text" value={config.locations[0]} onChange={e => setConfig({...config, locations: [e.target.value]})} className="w-full p-3 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white" placeholder="India, Bangalore, Mumbai..." />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1 dark:text-gray-200">Pages: {config.pages}</label>
+                                <input type="range" value={config.pages} onChange={e => setConfig({...config, pages: parseInt(e.target.value)})} min="1" max="10" className="w-full" />
+                            </div>
+                            <div className="flex gap-3">
+                                <Button variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
+                                <Button className="flex-1" onClick={startScrape}><Icons.Refresh /> Start</Button>
+                            </div>
+                        </div>
+                    )}
+                </Modal>
+            );
+        };
+
+        // Job Details Modal
+        const JobDetailsModal = ({ job, isOpen, onClose, onAction }) => {
+            const [notes, setNotes] = useState('');
+            useEffect(() => { if (job) setNotes(job.notes || ''); }, [job]);
+            if (!job) return null;
+
+            const saveNotes = async () => {
+                await api.updateJob(job.id, { notes });
+                alert('Notes saved!');
+            };
+
+            return (
+                <Modal isOpen={isOpen} onClose={onClose} title={job.title}>
+                    <div className="space-y-4">
+                        <div>
+                            <p className="text-lg font-medium dark:text-gray-300">{job.company}</p>
+                            <p className="text-sm text-gray-500">{job.location} • {job.experience}</p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            {job.salary_normalized && <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg"><p className="text-xs text-gray-500">Salary</p><p className="font-semibold text-green-600">{job.salary_normalized}</p></div>}
+                            {job.job_level && <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg"><p className="text-xs text-gray-500">Level</p><p className="font-semibold text-blue-600">{job.job_level}</p></div>}
+                        </div>
+                        {job.skills?.length > 0 && (
+                            <div>
+                                <p className="text-sm font-medium mb-2 dark:text-gray-300">Skills</p>
+                                <div className="flex flex-wrap gap-2">{job.skills.map((s, i) => <Badge key={i} variant="primary">{s}</Badge>)}</div>
+                            </div>
+                        )}
+                        <div>
+                            <p className="text-sm font-medium mb-2 dark:text-gray-300">Notes</p>
+                            <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Add notes..." className="w-full h-20 p-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white resize-none" />
+                            <Button variant="secondary" className="mt-2" onClick={saveNotes}>Save Notes</Button>
+                        </div>
+                        <div>
+                            <p className="text-sm font-medium mb-2 dark:text-gray-300">Status</p>
+                            <div className="flex flex-wrap gap-2">
+                                {['new', 'applied', 'interviewing', 'offered', 'rejected'].map(s => (
+                                    <button key={s} onClick={() => onAction(job.id, 'status', s)} className={`px-3 py-1 rounded-lg text-sm ${job.status === s ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-700 dark:text-gray-300'}`}>
+                                        {s.charAt(0).toUpperCase() + s.slice(1)}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        {job.url && <a href={job.url} target="_blank" rel="noopener noreferrer"><Button className="w-full">Apply Now <Icons.External /></Button></a>}
+                    </div>
+                </Modal>
+            );
+        };
+
+        // Main App
+        const App = () => {
+            const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true');
+            const [jobs, setJobs] = useState([]);
+            const [stats, setStats] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            const [page, setPage] = useState(1);
+            const [totalPages, setTotalPages] = useState(1);
+            const [total, setTotal] = useState(0);
+            const [searchInput, setSearchInput] = useState('');
+            const [search, setSearch] = useState('');
+            const [filters, setFilters] = useState({});
+            const [sortBy, setSortBy] = useState('created_at');
+            const [daysFilter, setDaysFilter] = useState('');
+            const [showFilters, setShowFilters] = useState(false);
+            const [showScrapeModal, setShowScrapeModal] = useState(false);
+            const [selectedJob, setSelectedJob] = useState(null);
+            const [sources, setSources] = useState([]);
+            const [locations, setLocations] = useState([]);
+
+            useEffect(() => {
+                document.documentElement.classList.toggle('dark', darkMode);
+                localStorage.setItem('darkMode', darkMode);
+            }, [darkMode]);
+
+            const fetchJobs = useCallback(async () => {
+                setLoading(true);
+                setError(null);
+                try {
+                    const params = { page, per_page: 20, sort_by: sortBy, sort_order: 'desc' };
+                    if (search) params.search = search;
+                    if (daysFilter) params.days = daysFilter;
+                    Object.entries(filters).forEach(([k, v]) => { if (v) params[k] = v; });
+                    
+                    const data = await api.getJobs(params);
+                    setJobs(data.jobs || []);
+                    setTotalPages(data.total_pages || 1);
+                    setTotal(data.total || 0);
+                } catch (e) {
+                    setError('Failed to load jobs. Is the backend running?');
+                    setJobs([]);
+                } finally {
+                    setLoading(false);
+                }
+            }, [page, search, filters, sortBy, daysFilter]);
+
+            useEffect(() => { fetchJobs(); }, [fetchJobs]);
+
+            useEffect(() => {
+                api.getStats().then(setStats).catch(() => {});
+                api.getSources().then(setSources).catch(() => []);
+                api.getLocations().then(setLocations).catch(() => []);
+            }, []);
+
+            const refreshStats = () => api.getStats().then(setStats).catch(() => {});
+
+            const handleSearch = e => { e.preventDefault(); setSearch(searchInput); setPage(1); };
+            const clearSearch = () => { setSearchInput(''); setSearch(''); };
+            const handleDaysFilter = d => { setDaysFilter(d); setPage(1); };
+            const handleFilters = f => { setFilters(f); setPage(1); };
+
+            const handleAction = async (id, action, value) => {
+                try {
+                    if (action === 'bookmark') {
+                        const job = jobs.find(j => j.id === id);
+                        await api.updateJob(id, { is_bookmarked: !job?.is_bookmarked });
+                    } else if (action === 'apply') {
+                        await api.changeStatus(id, 'applied');
+                    } else if (action === 'status') {
+                        await api.changeStatus(id, value);
+                    }
+                    fetchJobs();
+                    refreshStats();
+                } catch (e) { alert('Action failed'); }
+            };
+
+            const quickFilters = [
+                { label: 'All Jobs', value: '', count: stats?.total_jobs },
+                { label: '🔥 Today', value: '1', count: stats?.new_today },
+                { label: 'Last 3 Days', value: '3', count: stats?.last_3_days },
+                { label: 'Last 7 Days', value: '7', count: stats?.last_7_days },
+                { label: 'Last 14 Days', value: '14', count: stats?.last_14_days },
+            ];
+
+            return (
+                <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
+                    {/* Header */}
+                    <header className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 sticky top-0 z-40">
+                        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <span className="text-2xl">🚀</span>
+                                <div>
+                                    <h1 className="text-xl font-bold dark:text-white">PM Job Hub</h1>
+                                    <p className="text-xs text-gray-500">Find your dream PM role</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <Button onClick={() => setShowScrapeModal(true)}><Icons.Refresh /> Scrape</Button>
+                                <a href={`${API_BASE}/export/csv`}><Button variant="secondary"><Icons.Download /></Button></a>
+                                <button onClick={() => setDarkMode(!darkMode)} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300">
+                                    {darkMode ? <Icons.Sun /> : <Icons.Moon />}
+                                </button>
+                            </div>
+                        </div>
+                    </header>
+
+                    <main className="max-w-7xl mx-auto px-4 py-6">
+                        {/* Stats */}
+                        {stats && (
+                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+                                <StatCard title="Total Jobs" value={stats.total_jobs || 0} icon={<Icons.Briefcase />} color="bg-indigo-100 text-indigo-600" onClick={() => handleDaysFilter('')} active={!daysFilter} />
+                                <StatCard title="🔥 Today" value={stats.new_today || 0} icon={<Icons.TrendingUp />} color="bg-red-100 text-red-600" onClick={() => handleDaysFilter('1')} active={daysFilter === '1'} />
+                                <StatCard title="Last 7 Days" value={stats.last_7_days || 0} icon={<Icons.Clock />} color="bg-orange-100 text-orange-600" onClick={() => handleDaysFilter('7')} active={daysFilter === '7'} />
+                                <StatCard title="Bookmarked" value={stats.bookmarked || 0} icon={<Icons.Bookmark filled />} color="bg-yellow-100 text-yellow-600" />
+                                <StatCard title="Applied" value={stats.applied || 0} icon={<Icons.Check />} color="bg-green-100 text-green-600" />
+                                <StatCard title="Offers" value={stats.offers || 0} icon={<Icons.Target />} color="bg-emerald-100 text-emerald-600" />
+                            </div>
+                        )}
+
+                        {/* Quick Filters */}
+                        <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-2">
+                            <span className="text-sm text-gray-500 whitespace-nowrap">Show:</span>
+                            {quickFilters.map(f => (
+                                <button key={f.value} onClick={() => handleDaysFilter(f.value)} className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition ${daysFilter === f.value ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border dark:border-gray-600 hover:bg-gray-50'}`}>
+                                    {f.label} {f.count != null && <span className={`ml-1 px-1.5 py-0.5 rounded-full text-xs ${daysFilter === f.value ? 'bg-white/20' : 'bg-gray-100 dark:bg-gray-700'}`}>{f.count}</span>}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Search */}
+                        <div className="flex gap-3 mb-4">
+                            <form onSubmit={handleSearch} className="flex-1 flex gap-2">
+                                <div className="relative flex-1">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"><Icons.Search /></span>
+                                    <input type="text" value={searchInput} onChange={e => setSearchInput(e.target.value)} placeholder="Search jobs, companies..." className="w-full pl-10 pr-4 py-3 border dark:border-gray-600 rounded-xl bg-white dark:bg-gray-800 dark:text-white" />
+                                </div>
+                                <Button type="submit">Search</Button>
+                                {search && <Button variant="secondary" onClick={clearSearch}><Icons.X /></Button>}
+                            </form>
+                            <select value={sortBy} onChange={e => { setSortBy(e.target.value); setPage(1); }} className="px-4 py-2 border dark:border-gray-600 rounded-xl bg-white dark:bg-gray-800 dark:text-white">
+                                <option value="created_at">Newest</option>
+                                <option value="posted_date">Posted Date</option>
+                                <option value="match_score">Best Match</option>
+                                <option value="salary_max">Salary</option>
+                            </select>
+                            <Button variant={showFilters ? 'primary' : 'secondary'} onClick={() => setShowFilters(!showFilters)}><Icons.Filter /></Button>
+                        </div>
+
+                        {/* Active Filters */}
+                        {(search || Object.values(filters).some(v => v)) && (
+                            <div className="flex items-center gap-2 mb-4 flex-wrap">
+                                <span className="text-sm text-gray-500">Active:</span>
+                                {search && <Badge variant="primary">"{search}" <button onClick={clearSearch}>×</button></Badge>}
+                                {Object.entries(filters).filter(([_, v]) => v).map(([k, v]) => (
+                                    <Badge key={k} variant="primary">{k}: {String(v)} <button onClick={() => handleFilters({...filters, [k]: ''})}>×</button></Badge>
+                                ))}
+                                <button onClick={() => { clearSearch(); handleFilters({}); handleDaysFilter(''); }} className="text-sm text-indigo-600 hover:underline">Clear all</button>
+                            </div>
+                        )}
+
+                        <div className="flex gap-6">
+                            {showFilters && (
+                                <div className="w-72 flex-shrink-0">
+                                    <FilterPanel filters={filters} onChange={handleFilters} sources={sources} locations={locations} onClose={() => setShowFilters(false)} />
+                                </div>
+                            )}
+
+                            <div className="flex-1">
+                                <p className="text-sm text-gray-500 mb-4">{loading ? 'Loading...' : `${total} jobs found`}</p>
+
+                                {error && <Card className="p-8 text-center"><p className="text-red-600">{error}</p><Button className="mt-4" onClick={fetchJobs}>Retry</Button></Card>}
+
+                                {loading && <div className="space-y-4">{[1,2,3].map(i => <Card key={i} className="p-5"><div className="skeleton h-6 w-3/4 mb-3" /><div className="skeleton h-4 w-1/2" /></Card>)}</div>}
+
+                                {!loading && !error && jobs.length === 0 && (
+                                    <Card className="p-12 text-center">
+                                        <div className="text-5xl mb-4">🔍</div>
+                                        <h3 className="text-xl font-semibold dark:text-white">No jobs found</h3>
+                                        <p className="text-gray-500 mt-2">{search || Object.keys(filters).length ? 'Try different filters' : 'Click Scrape to fetch jobs'}</p>
+                                        <Button className="mt-4" onClick={() => setShowScrapeModal(true)}><Icons.Refresh /> Scrape Jobs</Button>
+                                    </Card>
+                                )}
+
+                                {!loading && !error && jobs.length > 0 && (
+                                    <>
+                                        <div className="space-y-4">{jobs.map(j => <JobCard key={j.id} job={j} onAction={handleAction} onViewDetails={setSelectedJob} />)}</div>
+                                        {totalPages > 1 && (
+                                            <div className="flex justify-center items-center gap-2 mt-8">
+                                                <Button variant="secondary" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Previous</Button>
+                                                <span className="px-4 text-gray-600 dark:text-gray-300">Page {page} of {totalPages}</span>
+                                                <Button variant="secondary" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next</Button>
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </main>
+
+                    <ScrapeModal isOpen={showScrapeModal} onClose={() => setShowScrapeModal(false)} onComplete={() => { setShowScrapeModal(false); fetchJobs(); refreshStats(); }} />
+                    <JobDetailsModal job={selectedJob} isOpen={!!selectedJob} onClose={() => setSelectedJob(null)} onAction={handleAction} />
+
+                    <footer className="bg-white dark:bg-gray-800 border-t dark:border-gray-700 py-6 mt-12 text-center text-gray-500 text-sm">
+                        🚀 PM Job Hub - Built for Product Managers
+                    </footer>
+                </div>
+            );
+        };
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
