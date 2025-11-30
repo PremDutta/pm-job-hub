@@ -5,11 +5,15 @@ Serves both the FastAPI backend and static frontend
 import os
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from pathlib import Path
 
 # Import the backend app directly - it already has /api routes
 from backend.app import app as api_app, init_db
+
+# Get the directory where this file is located
+BASE_DIR = Path(__file__).resolve().parent
 
 # Create main app
 app = FastAPI(title="PM Job Hub")
@@ -28,18 +32,31 @@ app.add_middleware(
 async def startup():
     init_db()
 
-# Include all routes from the backend API
-# The backend routes already have /api prefix
+# Include all routes from the backend API EXCEPT the root "/" route
 for route in api_app.routes:
+    # Skip the backend's root route - we want our frontend there
+    if hasattr(route, 'path') and route.path == "/":
+        continue
     app.routes.append(route)
 
-# Serve frontend
-@app.get("/")
+# Serve frontend at root
+@app.get("/", response_class=HTMLResponse)
 async def serve_frontend():
-    frontend_path = os.path.join(os.path.dirname(__file__), "frontend", "index.html")
-    if os.path.exists(frontend_path):
+    frontend_path = BASE_DIR / "frontend" / "index.html"
+    if frontend_path.exists():
         return FileResponse(frontend_path)
-    return JSONResponse({"error": "Frontend not found", "path": frontend_path}, status_code=404)
+    # Fallback: return inline HTML with error message
+    return HTMLResponse(content=f"""
+    <!DOCTYPE html>
+    <html>
+    <head><title>PM Job Hub</title></head>
+    <body style="font-family: sans-serif; padding: 40px; text-align: center;">
+        <h1>🚀 PM Job Hub</h1>
+        <p>Frontend file not found at: {frontend_path}</p>
+        <p>But the API is working! Try: <a href="/api/sources">/api/sources</a></p>
+    </body>
+    </html>
+    """, status_code=200)
 
 if __name__ == "__main__":
     import uvicorn
