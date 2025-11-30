@@ -1612,10 +1612,82 @@ def run_scraper_task(locations, days, pages, sources):
     global scraper_status
     
     try:
-        scraper = JobScraper()
+        # Import the new Ultimate scraper
+        from backend.scraper import UltimateJobScraper
+        scraper = UltimateJobScraper()
         
         with status_lock:
             scraper_status["current_source"] = "Starting..."
+            scraper_status["progress"] = 0
+        
+        # Use the new scraper
+        raw_jobs = scraper.scrape_all(locations, pages, sources)
+        
+        with status_lock:
+            scraper_status["total_found"] = len(raw_jobs)
+            scraper_status["current_source"] = "Processing..."
+            scraper_status["progress"] = 50
+        
+        processed_jobs = scraper.process_jobs(raw_jobs)
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        new_count = 0
+        dup_count = 0
+        
+        for job in processed_jobs:
+            cursor.execute("SELECT id FROM jobs WHERE id = ?", (job['id'],))
+            if cursor.fetchone():
+                dup_count += 1
+                continue
+            
+            # Build insert with proper handling
+            try:
+                cursor.execute("""
+                    INSERT INTO jobs (id, title, company, location, work_type, job_level, 
+                        experience, experience_min, experience_max, salary_raw, salary_min, 
+                        salary_max, salary_normalized, description, skills, source, url, 
+                        posted_date, status, is_bookmarked, match_score, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    job['id'], job['title'], job['company'], job['location'],
+                    job.get('work_type', ''), job.get('level', ''),
+                    job.get('experience', ''), job.get('experience_min', 0), job.get('experience_max', 0),
+                    job.get('salary', ''), job.get('salary_min', 0), job.get('salary_max', 0),
+                    job.get('salary', ''), job.get('description', ''),
+                    json.dumps(job.get('skills', [])), job.get('source', ''), job.get('url', ''),
+                    job.get('posted_date', ''), job.get('status', 'new'),
+                    1 if job.get('is_bookmarked') else 0, 50,
+                    job.get('created_at', datetime.now().isoformat()),
+                    datetime.now().isoformat()
+                ))
+                new_count += 1
+            except Exception as insert_err:
+                logger.error(f"Insert error for job {job.get('id')}: {insert_err}")
+                continue
+        
+        conn.commit()
+        conn.close()
+        
+        with status_lock:
+            scraper_status.update({
+                "new_jobs": new_count,
+                "duplicates": dup_count,
+                "status": "completed",
+                "completed_at": datetime.now().isoformat(),
+                "is_running": False,
+                "progress": 100,
+                "current_source": "Done!"
+            })
+        
+    except ImportError:
+        # Fallback to old scraper if new one isn't available
+        logger.warning("Using legacy scraper")
+        scraper = JobScraper()
+        
+        with status_lock:
+            scraper_status["current_source"] = "Starting (legacy)..."
             scraper_status["progress"] = 0
         
         raw_jobs = scraper.scrape_all(locations, pages, sources)
@@ -1660,6 +1732,8 @@ def run_scraper_task(locations, days, pages, sources):
         
     except Exception as e:
         logger.error(f"Scraper error: {e}")
+        import traceback
+        traceback.print_exc()
         with status_lock:
             scraper_status.update({
                 "status": f"error: {str(e)}",
@@ -1888,12 +1962,33 @@ async def export_csv(status: Optional[str] = None):
 # Helper endpoints
 @app.get("/api/sources")
 async def get_sources():
+    # Return all available sources (both from DB and available scrapers)
+    all_sources = [
+        {"id": "linkedin", "name": "LinkedIn", "enabled": True, "description": "Professional network jobs"},
+        {"id": "indeed", "name": "Indeed", "enabled": True, "description": "Global job aggregator"},
+        {"id": "naukri", "name": "Naukri", "enabled": True, "description": "India's largest job portal"},
+        {"id": "glassdoor", "name": "Glassdoor", "enabled": True, "description": "Jobs with company reviews"},
+        {"id": "foundit", "name": "Foundit (Monster)", "enabled": True, "description": "Monster India"},
+        {"id": "internshala", "name": "Internshala", "enabled": True, "description": "Entry-level & internships"},
+        {"id": "instahyre", "name": "Instahyre", "enabled": True, "description": "Startup-focused jobs"},
+        {"id": "wellfound", "name": "Wellfound (AngelList)", "enabled": True, "description": "Startup jobs"},
+        {"id": "cutshort", "name": "Cutshort", "enabled": True, "description": "Tech-focused platform"},
+        {"id": "timesjobs", "name": "TimesJobs", "enabled": True, "description": "Times Group portal"},
+        {"id": "shine", "name": "Shine", "enabled": True, "description": "HT Media job portal"},
+    ]
+    
+    # Also get sources that have jobs in DB
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT DISTINCT source FROM jobs WHERE source != ''")
-    sources = [r[0] for r in cursor.fetchall()]
+    cursor.execute("SELECT source, COUNT(*) as count FROM jobs WHERE source != '' GROUP BY source")
+    db_sources = {r[0]: r[1] for r in cursor.fetchall()}
     conn.close()
-    return sources
+    
+    # Add job counts to sources
+    for source in all_sources:
+        source['job_count'] = db_sources.get(source['name'], 0)
+    
+    return all_sources
 
 @app.get("/api/locations")
 async def get_locations():

@@ -1,14 +1,26 @@
 # 🚀 PM Job Hub
 
-A powerful Product Manager job aggregator that scrapes jobs from multiple sources.
+A powerful Product Manager job aggregator that scrapes jobs from **11+ sources** with anti-blocking techniques.
 
-## Features
+## ✨ Features
 
-- Multi-source job scraping (LinkedIn, Indeed, Naukri, Instahyre, Cutshort)
-- Application tracking with Kanban-style stages
-- Job filtering by location, experience, salary
-- Bookmark and track applications
-- Dark mode support
+- **Multi-source scraping** - LinkedIn, Indeed, Naukri, Glassdoor, Foundit, Internshala, Instahyre, Wellfound, Cutshort, TimesJobs, Shine
+- **Anti-blocking techniques** - Rotating User-Agents, smart delays, retry logic
+- **Application tracking** with Kanban-style stages
+- **Job filtering** by location, experience, salary, work type
+- **Bookmark and track** applications
+- **Dark mode** support
+
+## 🔥 New: Ultimate Job Scraper
+
+The new scraper includes:
+- 🔄 **11 job sources** (vs 3 before)
+- 🛡️ **Bot detection bypass** - Rotating headers, smart delays
+- 🔁 **Automatic retries** - Handles rate limits gracefully
+- 📦 **Multiple selector fallbacks** - Works even when sites change HTML
+- 📊 **Better job parsing** - Salary, experience, skills extraction
+
+See `SCRAPING_GUIDE.md` for details on how scraping works and how to add new sources.
 
 ## Quick Start (Local Development)
 

@@ -290,9 +290,28 @@
 
         // Scrape Modal
         const ScrapeModal = ({ isOpen, onClose, onComplete }) => {
-            const [config, setConfig] = useState({ locations: ['India'], pages: 3 });
+            const [config, setConfig] = useState({ 
+                locations: ['India', 'Bangalore', 'Mumbai', 'Delhi'], 
+                pages: 3,
+                sources: ['all']
+            });
             const [status, setStatus] = useState(null);
             const [polling, setPolling] = useState(false);
+            const [showAdvanced, setShowAdvanced] = useState(false);
+
+            const allSources = [
+                { id: 'linkedin', name: 'LinkedIn', icon: '💼' },
+                { id: 'naukri', name: 'Naukri', icon: '🇮🇳' },
+                { id: 'indeed', name: 'Indeed', icon: '🔍' },
+                { id: 'foundit', name: 'Foundit', icon: '📋' },
+                { id: 'glassdoor', name: 'Glassdoor', icon: '🏢' },
+                { id: 'timesjobs', name: 'TimesJobs', icon: '⏰' },
+                { id: 'internshala', name: 'Internshala', icon: '🎓' },
+                { id: 'instahyre', name: 'Instahyre', icon: '🚀' },
+                { id: 'cutshort', name: 'Cutshort', icon: '✂️' },
+                { id: 'wellfound', name: 'Wellfound', icon: '👼' },
+                { id: 'shine', name: 'Shine', icon: '✨' },
+            ];
 
             useEffect(() => {
                 if (!isOpen) { setStatus(null); setPolling(false); }
@@ -322,13 +341,28 @@
                 } catch (e) { alert('Failed to start scraping'); }
             };
 
+            const toggleSource = (sourceId) => {
+                if (config.sources.includes('all')) {
+                    setConfig({...config, sources: [sourceId]});
+                } else if (config.sources.includes(sourceId)) {
+                    const newSources = config.sources.filter(s => s !== sourceId);
+                    setConfig({...config, sources: newSources.length ? newSources : ['all']});
+                } else {
+                    setConfig({...config, sources: [...config.sources, sourceId]});
+                }
+            };
+
             return (
                 <Modal isOpen={isOpen} onClose={onClose} title="🔍 Scrape New Jobs">
                     {status?.is_running ? (
                         <div className="text-center py-8">
                             <div className="w-16 h-16 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto mb-4" />
                             <p className="font-medium dark:text-white">Scraping in progress...</p>
-                            <p className="text-sm text-gray-500 mt-2">Found: {status.total_found || 0} | New: {status.new_jobs || 0}</p>
+                            <p className="text-sm text-gray-500 mt-2">{status.current_source}</p>
+                            <p className="text-sm text-gray-500 mt-1">Found: {status.total_found || 0} | New: {status.new_jobs || 0}</p>
+                            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-4">
+                                <div className="bg-indigo-600 h-2 rounded-full transition-all" style={{width: `${status.progress || 0}%`}} />
+                            </div>
                         </div>
                     ) : status?.status === 'completed' ? (
                         <div className="text-center py-8">
@@ -337,19 +371,76 @@
                             <p className="text-gray-500 mt-2">Found {status.total_found} jobs, {status.new_jobs} new</p>
                             <Button className="mt-4" onClick={onClose}>View Jobs</Button>
                         </div>
+                    ) : status?.status?.startsWith('error') ? (
+                        <div className="text-center py-8">
+                            <div className="text-5xl mb-4">❌</div>
+                            <p className="font-semibold text-red-600">Scraping Failed</p>
+                            <p className="text-gray-500 mt-2 text-sm">{status.status}</p>
+                            <Button className="mt-4" onClick={() => setStatus(null)}>Try Again</Button>
+                        </div>
                     ) : (
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium mb-1 dark:text-gray-200">Location</label>
-                                <input type="text" value={config.locations[0]} onChange={e => setConfig({...config, locations: [e.target.value]})} className="w-full p-3 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white" placeholder="India, Bangalore, Mumbai..." />
+                                <label className="block text-sm font-medium mb-1 dark:text-gray-200">Locations (comma-separated)</label>
+                                <input 
+                                    type="text" 
+                                    value={config.locations.join(', ')} 
+                                    onChange={e => setConfig({...config, locations: e.target.value.split(',').map(s => s.trim()).filter(Boolean)})} 
+                                    className="w-full p-3 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white" 
+                                    placeholder="India, Bangalore, Mumbai, Delhi..." 
+                                />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium mb-1 dark:text-gray-200">Pages: {config.pages}</label>
-                                <input type="range" value={config.pages} onChange={e => setConfig({...config, pages: parseInt(e.target.value)})} min="1" max="10" className="w-full" />
+                                <label className="block text-sm font-medium mb-1 dark:text-gray-200">Pages per source: {config.pages}</label>
+                                <input type="range" value={config.pages} onChange={e => setConfig({...config, pages: parseInt(e.target.value)})} min="1" max="10" className="w-full accent-indigo-600" />
+                                <p className="text-xs text-gray-500 mt-1">More pages = more jobs but slower</p>
                             </div>
-                            <div className="flex gap-3">
+                            
+                            <div>
+                                <button 
+                                    onClick={() => setShowAdvanced(!showAdvanced)}
+                                    className="text-sm text-indigo-600 dark:text-indigo-400 flex items-center gap-1"
+                                >
+                                    {showAdvanced ? '▼' : '▶'} Advanced: Select Sources
+                                </button>
+                                
+                                {showAdvanced && (
+                                    <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                                        <div className="flex justify-between mb-2">
+                                            <span className="text-xs text-gray-500">Select job sources to scrape:</span>
+                                            <button 
+                                                onClick={() => setConfig({...config, sources: ['all']})}
+                                                className="text-xs text-indigo-600"
+                                            >
+                                                Select All
+                                            </button>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {allSources.map(source => (
+                                                <button
+                                                    key={source.id}
+                                                    onClick={() => toggleSource(source.id)}
+                                                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all ${
+                                                        config.sources.includes('all') || config.sources.includes(source.id)
+                                                            ? 'bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 border-2 border-indigo-300'
+                                                            : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600'
+                                                    }`}
+                                                >
+                                                    <span>{source.icon}</span>
+                                                    <span>{source.name}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <p className="text-xs text-gray-500 mt-2">
+                                            💡 Tip: Naukri, TimesJobs & Foundit work best for India
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                            
+                            <div className="flex gap-3 pt-2">
                                 <Button variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
-                                <Button className="flex-1" onClick={startScrape}><Icons.Refresh /> Start</Button>
+                                <Button className="flex-1" onClick={startScrape}><Icons.Refresh /> Start Scraping</Button>
                             </div>
                         </div>
                     )}
